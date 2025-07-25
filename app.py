@@ -4,6 +4,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import requests
+import io
 
 # Configure the page
 st.set_page_config(
@@ -23,7 +24,26 @@ def load_data():
     try:
         # Use the reliable FIPS codes dataset
         counties_url = "https://raw.githubusercontent.com/kjhealy/fips-codes/master/county_fips_master.csv"
-        counties = pd.read_csv(counties_url)
+        
+        # First, get the raw content with requests to handle encoding properly
+        response = requests.get(counties_url)
+        response.raise_for_status()
+        
+        # Try different encodings to handle the file properly
+        encodings_to_try = ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']
+        
+        for encoding in encodings_to_try:
+            try:
+                # Decode the content with the current encoding
+                content = response.content.decode(encoding)
+                # Create a StringIO object to read as CSV
+                counties = pd.read_csv(io.StringIO(content))
+                break
+            except UnicodeDecodeError:
+                continue
+        else:
+            # If none of the encodings work, raise an error
+            raise ValueError("Could not decode the file with any of the attempted encodings")
         
         # The dataset already has the right column names:
         # fips, county_name, state_abbr, state_name
