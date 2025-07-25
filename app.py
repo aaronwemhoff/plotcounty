@@ -59,6 +59,28 @@ def load_data():
         st.error(f"Error loading county data: {e}")
         return None
 
+# Load emission factors data
+@st.cache_data
+def load_emission_data():
+    """Load emission factors from inputdata.xlsx"""
+    try:
+        # Load the Excel file
+        emission_df = pd.read_excel('inputdata.xlsx', header=None)
+        
+        # Assign column names based on description
+        emission_df.columns = ['fips_raw', 'EWIF', 'EF', 'ACF', 'SWI']
+        
+        # Convert FIPS to string with leading zeros for consistency
+        emission_df['fips'] = emission_df['fips_raw'].astype(str).str.zfill(5)
+        
+        # Remove any rows with missing FIPS or EF data
+        emission_df = emission_df.dropna(subset=['fips_raw', 'EF'])
+        
+        return emission_df[['fips', 'EWIF', 'EF', 'ACF', 'SWI']]
+    except Exception as e:
+        st.error(f"Error loading emission data: {e}")
+        return None
+
 # Load GeoJSON for US counties
 @st.cache_data
 def load_geojson():
@@ -76,11 +98,16 @@ def load_geojson():
 with st.spinner("Loading data..."):
     data = load_data()
     geojson = load_geojson()
+    emission_data = load_emission_data()
 
 # Check if data loaded successfully
 if data is None or geojson is None:
     st.error("Failed to load required data. Please refresh the page to try again.")
     st.stop()
+
+if emission_data is None:
+    st.warning("Emission data could not be loaded. The app will work without emission factors.")
+    emission_data = pd.DataFrame(columns=['fips', 'EWIF', 'EF', 'ACF', 'SWI'])  # Empty dataframe
 
 # Create two columns for better layout
 col1, col2 = st.columns([1, 2])
@@ -154,10 +181,21 @@ with col2:
                     how='left'
                 )
                 
-                # Fill missing values for counties not in our dataset
+                # Merge with emission data
+                plot_df = plot_df.merge(
+                    emission_data[['fips', 'EF', 'EWIF', 'ACF', 'SWI']], 
+                    on='fips', 
+                    how='left'
+                )
+                
+                # Fill missing values for counties not in our datasets
                 plot_df['county_name'] = plot_df['county_name'].fillna('Unknown County')
                 plot_df['state_name'] = plot_df['state_name'].fillna('Unknown State')
                 plot_df['state_abbr'] = plot_df['state_abbr'].fillna('??')
+                plot_df['EF'] = plot_df['EF'].fillna('N/A')
+                plot_df['EWIF'] = plot_df['EWIF'].fillna('N/A')
+                plot_df['ACF'] = plot_df['ACF'].fillna('N/A')
+                plot_df['SWI'] = plot_df['SWI'].fillna('N/A')
                 
                 # Highlight only the selected county
                 plot_df.loc[plot_df['fips'] == fips_code, 'highlight'] = 1
@@ -185,7 +223,7 @@ with col2:
                         'fips': ':',
                         'highlight': False
                     },
-                    custom_data=['county_name', 'state_name', 'state_abbr', 'fips']
+                    custom_data=['county_name', 'state_name', 'state_abbr', 'fips', 'EF']
                 )
                 
                 # Update hover template for better formatting
@@ -193,6 +231,7 @@ with col2:
                     hovertemplate="<b>%{customdata[0]}</b><br>" +
                                   "State: %{customdata[1]} (%{customdata[2]})<br>" +
                                   "FIPS: %{customdata[3]}<br>" +
+                                  "Carbon Emission Factor: %{customdata[4]}<br>" +
                                   "<extra></extra>"
                 )
                 
