@@ -134,6 +134,38 @@ with col1:
         help="Select the county within the chosen state"
     )
     
+    # Add separator
+    st.markdown("---")
+    
+    # On-site power input section
+    st.subheader("On-Site Power Generation")
+    
+    # Create two columns for power input and units
+    power_col1, power_col2 = st.columns([2, 1])
+    
+    with power_col1:
+        onsite_power = st.number_input(
+            "On-Site Power:",
+            min_value=0.0,
+            value=0.0,
+            step=1.0,
+            format="%.2f",
+            help="Enter the amount of on-site power generation"
+        )
+    
+    with power_col2:
+        power_units = st.selectbox(
+            "Units:",
+            ["kWh/yr", "kWh/mo", "kW", "MW"],
+            help="Select the units for on-site power"
+        )
+    
+    # Display the entered values
+    if onsite_power > 0:
+        st.info(f"**On-Site Power:** {onsite_power:,.2f} {power_units}")
+    
+    st.markdown("---")
+    
     # Show some info about the selected location
     if selected_county:
         selected_row = filtered_data[filtered_data['county_name'] == selected_county]
