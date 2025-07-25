@@ -180,11 +180,20 @@ with col2:
                     title=f"{selected_county}, {state_abbr}",
                     hover_name='county_name',
                     hover_data={
-                        'state_name': True,
-                        'state_abbr': True,
-                        'fips': True,
-                        'highlight': False  # Hide this from hover
-                    }
+                        'state_name': ':',
+                        'state_abbr': ':',
+                        'fips': ':',
+                        'highlight': False
+                    },
+                    custom_data=['county_name', 'state_name', 'state_abbr', 'fips']
+                )
+                
+                # Update hover template for better formatting
+                fig.update_traces(
+                    hovertemplate="<b>%{customdata[0]}</b><br>" +
+                                  "State: %{customdata[1]} (%{customdata[2]})<br>" +
+                                  "FIPS: %{customdata[3]}<br>" +
+                                  "<extra></extra>"
                 )
                 
                 # Force showing all counties by updating traces
