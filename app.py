@@ -135,10 +135,20 @@ with col2:
                 fips_code = selected_row['fips'].iloc[0]
                 state_abbr = selected_row['state_abbr'].iloc[0]
                 
-                # Create a dataframe with all counties, highlighting only the selected one
-                plot_df = data.copy()
-                plot_df['highlight'] = 0  # Start with all counties unselected
-                plot_df.loc[plot_df['fips'] == fips_code, 'highlight'] = 1  # Highlight selected county
+                # Extract all FIPS codes from the GeoJSON to ensure we show all counties
+                all_fips = []
+                for feature in geojson['features']:
+                    fips = feature['id']
+                    all_fips.append(fips)
+                
+                # Create a dataframe with ALL counties from the GeoJSON
+                plot_df = pd.DataFrame({
+                    'fips': all_fips,
+                    'highlight': 0  # Start with all counties unselected
+                })
+                
+                # Highlight only the selected county
+                plot_df.loc[plot_df['fips'] == fips_code, 'highlight'] = 1
 
                 # Make the choropleth map showing all counties
                 fig = px.choropleth(
