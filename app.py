@@ -149,6 +149,11 @@ with col2:
                 
                 # Highlight only the selected county
                 plot_df.loc[plot_df['fips'] == fips_code, 'highlight'] = 1
+                
+                # Debug info
+                st.write(f"Total counties in plot data: {len(plot_df)}")
+                st.write(f"Selected county FIPS: {fips_code}")
+                st.write(f"Counties with highlight=1: {(plot_df['highlight'] == 1).sum()}")
 
                 # Make the choropleth map showing all counties
                 fig = px.choropleth(
@@ -156,11 +161,18 @@ with col2:
                     geojson=geojson,
                     locations='fips',
                     color='highlight',
-                    color_continuous_scale=[[0, "lightgray"], [1, "red"]],
+                    color_continuous_scale=["lightgray", "red"],
                     range_color=(0, 1),
                     scope="usa",
                     labels={'highlight': 'Selected County'},
                     title=f"{selected_county}, {state_abbr}"
+                )
+                
+                # Force showing all counties by updating traces
+                fig.update_traces(
+                    marker_line_color='white',
+                    marker_line_width=0.5,
+                    showscale=False
                 )
                 
                 # Customize the map appearance
