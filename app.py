@@ -19,17 +19,20 @@ st.markdown("Select a state and county to see it highlighted on the map!")
 # Load counties dataset with state and FIPS info
 @st.cache_data
 def load_data():
-    """Load and process county data from the web"""
+    """Load and process county data from reliable GitHub source"""
     try:
-        counties_url = "https://raw.githubusercontent.com/plotly/datasets/master/fips-unemp-16.csv"
+        # Use the reliable FIPS codes dataset
+        counties_url = "https://raw.githubusercontent.com/kjhealy/fips-codes/master/county_fips_master.csv"
         counties = pd.read_csv(counties_url)
         
-        # Clean and process the data
-        counties['State'] = counties['Area_name'].str.split(", ").str[-1]
-        counties['County'] = counties['Area_name'].str.split(", ").str[0]
+        # The dataset already has the right column names:
+        # fips, county_name, state_abbr, state_name
         
-        # Remove any rows with missing data
-        counties = counties.dropna(subset=['State', 'County', 'fips'])
+        # Clean up any potential issues
+        counties = counties.dropna(subset=['state_name', 'county_name', 'fips'])
+        
+        # Make sure FIPS codes are strings with proper padding
+        counties['fips'] = counties['fips'].astype(str).str.zfill(5)
         
         return counties
     except Exception as e:
@@ -66,7 +69,7 @@ with col1:
     st.subheader("Select Location")
     
     # Drop-down menu for selecting state
-    states = sorted(data['State'].unique())
+    states = sorted(data['state_name'].unique())
     selected_state = st.selectbox(
         "Choose a U.S. State:", 
         states,
@@ -74,8 +77,8 @@ with col1:
     )
 
     # Get list of counties in the selected state
-    filtered_data = data[data['State'] == selected_state]
-    counties = sorted(filtered_data['County'].unique())
+    filtered_data = data[data['state_name'] == selected_state]
+    counties = sorted(filtered_data['county_name'].unique())
 
     # Drop-down menu for selecting county
     selected_county = st.selectbox(
@@ -86,17 +89,17 @@ with col1:
     
     # Show some info about the selected location
     if selected_county:
-        selected_row = filtered_data[filtered_data['County'] == selected_county]
+        selected_row = filtered_data[filtered_data['county_name'] == selected_county]
         if not selected_row.empty:
             fips_code = selected_row['fips'].iloc[0]
-            unemployment_rate = selected_row['unemp'].iloc[0]
+            state_abbr = selected_row['state_abbr'].iloc[0]
             
             st.info(f"""
-            **Selected:** {selected_county}, {selected_state}
+            **Selected:** {selected_county}, {state_abbr}
             
             **FIPS Code:** {fips_code}
             
-            **Unemployment Rate (2016):** {unemployment_rate}%
+            **Full State Name:** {selected_state}
             """)
 
 with col2:
@@ -106,14 +109,15 @@ with col2:
     if selected_county and selected_state:
         try:
             # Get the selected county data
-            selected_row = filtered_data[filtered_data['County'] == selected_county]
+            selected_row = filtered_data[filtered_data['county_name'] == selected_county]
             
             if not selected_row.empty:
                 fips_code = selected_row['fips'].iloc[0]
+                state_abbr = selected_row['state_abbr'].iloc[0]
                 
                 # Create a dataframe to highlight only selected county
                 plot_df = pd.DataFrame({
-                    "fips": [str(fips_code).zfill(5)],  # Ensure FIPS is 5 digits with leading zeros
+                    "fips": [fips_code],
                     "highlight": [1]  # 1 means highlight this county
                 })
 
@@ -127,7 +131,7 @@ with col2:
                     range_color=(0, 1),
                     scope="usa",
                     labels={'highlight': 'Selected County'},
-                    title=f"{selected_county}, {selected_state}"
+                    title=f"{selected_county}, {state_abbr}"
                 )
                 
                 # Customize the map appearance
@@ -157,8 +161,10 @@ with col2:
 st.markdown("---")
 st.markdown("""
 **Data Sources:**
-- County unemployment data from Plotly datasets (2016)
+- County FIPS codes from [Kieran Healy's FIPS codes repository](https://github.com/kjhealy/fips-codes)
 - Geographic boundaries from Plotly GeoJSON data
 
 **How to use:** Select a state from the dropdown, then choose a county. The map will automatically update to highlight your selection in red.
+
+**About the data:** FIPS (Federal Information Processing Standards) codes are unique identifiers for U.S. counties used by the Census Bureau and other federal agencies.
 """)
