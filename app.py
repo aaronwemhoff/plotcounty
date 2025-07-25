@@ -3,67 +3,162 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import json
 import requests
 
+# Configure the page
+st.set_page_config(
+    page_title="U.S. County Selector",
+    page_icon="🗺️",
+    layout="wide"
+)
+
 # Title of the app
-st.title("U.S. County Selector")
+st.title("🗺️ U.S. County Selector")
+st.markdown("Select a state and county to see it highlighted on the map!")
 
 # Load counties dataset with state and FIPS info
 @st.cache_data
 def load_data():
-    counties_url = "https://raw.githubusercontent.com/plotly/datasets/master/fips-unemp-16.csv"
-    counties = pd.read_csv(counties_url)
-    counties['State'] = counties['Area_name'].apply(lambda x: x.split(", ")[-1])
-    counties['County'] = counties['Area_name'].apply(lambda x: x.split(", ")[0])
-    return counties
+    """Load and process county data from the web"""
+    try:
+        counties_url = "https://raw.githubusercontent.com/plotly/datasets/master/fips-unemp-16.csv"
+        counties = pd.read_csv(counties_url)
+        
+        # Clean and process the data
+        counties['State'] = counties['Area_name'].str.split(", ").str[-1]
+        counties['County'] = counties['Area_name'].str.split(", ").str[0]
+        
+        # Remove any rows with missing data
+        counties = counties.dropna(subset=['State', 'County', 'fips'])
+        
+        return counties
+    except Exception as e:
+        st.error(f"Error loading county data: {e}")
+        return None
 
 # Load GeoJSON for US counties
 @st.cache_data
 def load_geojson():
-    url = "https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json"
-    response = requests.get(url)
-    return response.json()
+    """Load geographic boundary data for counties"""
+    try:
+        url = "https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json"
+        response = requests.get(url)
+        response.raise_for_status()  # Raise an error for bad status codes
+        return response.json()
+    except Exception as e:
+        st.error(f"Error loading map data: {e}")
+        return None
 
-data = load_data()
-geojson = load_geojson()
+# Load data with error handling
+with st.spinner("Loading data..."):
+    data = load_data()
+    geojson = load_geojson()
 
-# Drop-down menu for selecting state
-states = sorted(data['State'].unique())
-selected_state = st.selectbox("Choose a U.S. State:", states)
+# Check if data loaded successfully
+if data is None or geojson is None:
+    st.error("Failed to load required data. Please refresh the page to try again.")
+    st.stop()
 
-# Get list of counties in the selected state
-filtered = data[data['State'] == selected_state]
-counties = filtered['County'].tolist()
+# Create two columns for better layout
+col1, col2 = st.columns([1, 2])
 
-# Drop-down menu for selecting county
-selected_county = st.selectbox("Choose a County:", counties)
-
-# Button to generate plot
-if st.button("Make Plot"):
-    # Get FIPS code for selected county
-    selected_row = filtered[filtered['County'] == selected_county]
-    fips_code = selected_row['fips'].values[0]
+with col1:
+    st.subheader("Select Location")
     
-    st.subheader(f"Selected County FIPS Code: {fips_code}")
-
-    # Create a dataframe to highlight only selected county
-    plot_df = pd.DataFrame({
-        "fips": [fips_code],
-        "highlight": [1]  # 1 means highlight
-    })
-
-    # Make the choropleth map
-    fig = px.choropleth(
-        plot_df,
-        geojson=geojson,
-        locations='fips',
-        color='highlight',
-        color_continuous_scale=[[0, "white"], [1, "red"]],
-        range_color=(0, 1),
-        scope="usa",
-        labels={'highlight': 'Selected'},
+    # Drop-down menu for selecting state
+    states = sorted(data['State'].unique())
+    selected_state = st.selectbox(
+        "Choose a U.S. State:", 
+        states,
+        help="Select the state you want to explore"
     )
-    fig.update_geos(fitbounds="locations", visible=False)
-    fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
-    st.plotly_chart(fig)
+
+    # Get list of counties in the selected state
+    filtered_data = data[data['State'] == selected_state]
+    counties = sorted(filtered_data['County'].unique())
+
+    # Drop-down menu for selecting county
+    selected_county = st.selectbox(
+        "Choose a County:", 
+        counties,
+        help="Select the county within the chosen state"
+    )
+    
+    # Show some info about the selected location
+    if selected_county:
+        selected_row = filtered_data[filtered_data['County'] == selected_county]
+        if not selected_row.empty:
+            fips_code = selected_row['fips'].iloc[0]
+            unemployment_rate = selected_row['unemp'].iloc[0]
+            
+            st.info(f"""
+            **Selected:** {selected_county}, {selected_state}
+            
+            **FIPS Code:** {fips_code}
+            
+            **Unemployment Rate (2016):** {unemployment_rate}%
+            """)
+
+with col2:
+    st.subheader("County Map")
+    
+    # Automatically generate plot when selections are made
+    if selected_county and selected_state:
+        try:
+            # Get the selected county data
+            selected_row = filtered_data[filtered_data['County'] == selected_county]
+            
+            if not selected_row.empty:
+                fips_code = selected_row['fips'].iloc[0]
+                
+                # Create a dataframe to highlight only selected county
+                plot_df = pd.DataFrame({
+                    "fips": [str(fips_code).zfill(5)],  # Ensure FIPS is 5 digits with leading zeros
+                    "highlight": [1]  # 1 means highlight this county
+                })
+
+                # Make the choropleth map
+                fig = px.choropleth(
+                    plot_df,
+                    geojson=geojson,
+                    locations='fips',
+                    color='highlight',
+                    color_continuous_scale=[[0, "lightgray"], [1, "red"]],
+                    range_color=(0, 1),
+                    scope="usa",
+                    labels={'highlight': 'Selected County'},
+                    title=f"{selected_county}, {selected_state}"
+                )
+                
+                # Customize the map appearance
+                fig.update_geos(
+                    fitbounds="locations", 
+                    visible=False,
+                    showlakes=True,
+                    lakecolor="lightblue"
+                )
+                
+                fig.update_layout(
+                    margin={"r":0,"t":40,"l":0,"b":0},
+                    coloraxis_showscale=False,  # Hide the color scale since it's not meaningful
+                    height=500
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("County data not found. Please try selecting again.")
+                
+        except Exception as e:
+            st.error(f"Error creating map: {e}")
+    else:
+        st.info("👆 Select a state and county to see the map")
+
+# Add footer with information
+st.markdown("---")
+st.markdown("""
+**Data Sources:**
+- County unemployment data from Plotly datasets (2016)
+- Geographic boundaries from Plotly GeoJSON data
+
+**How to use:** Select a state from the dropdown, then choose a county. The map will automatically update to highlight your selection in red.
+""")
