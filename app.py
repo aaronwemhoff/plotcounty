@@ -164,6 +164,26 @@ with col1:
     if onsite_power > 0:
         st.info(f"**On-Site Power:** {onsite_power:,.2f} {power_units}")
     
+    # Function to convert power to kWh/year
+    def convert_to_kwh_per_year(power_value, units):
+        """Convert power input to kWh/year based on units"""
+        if units == "kWh/yr":
+            return power_value
+        elif units == "kWh/mo":
+            return power_value * 12  # 12 months per year
+        elif units == "kW":
+            return power_value * 8760  # 8760 hours per year
+        elif units == "MW":
+            return power_value * 1000 * 8760  # Convert MW to kW, then to kWh/year
+        else:
+            return 0
+    
+    # Convert on-site power to kWh/year
+    onsite_power_kwh_per_year = convert_to_kwh_per_year(onsite_power, power_units)
+    
+    if onsite_power > 0:
+        st.write(f"**Converted:** {onsite_power_kwh_per_year:,.0f} kWh/year")
+    
     st.markdown("---")
     
     # Show some info about the selected location
@@ -229,6 +249,21 @@ with col2:
                 plot_df['ACF'] = plot_df['ACF'].fillna('N/A')
                 plot_df['SWI'] = plot_df['SWI'].fillna('N/A')
                 
+                # Calculate carbon footprint for each county
+                def calculate_carbon_footprint(ef_value, power_kwh_year):
+                    """Calculate carbon footprint in kgCO2e/year"""
+                    if ef_value == 'N/A' or pd.isna(ef_value) or power_kwh_year == 0:
+                        return 'N/A'
+                    try:
+                        return float(ef_value) * power_kwh_year
+                    except (ValueError, TypeError):
+                        return 'N/A'
+                
+                # Add carbon footprint column
+                plot_df['carbon_footprint'] = plot_df['EF'].apply(
+                    lambda ef: calculate_carbon_footprint(ef, onsite_power_kwh_per_year)
+                )
+                
                 # Highlight only the selected county
                 plot_df.loc[plot_df['fips'] == fips_code, 'highlight'] = 1
                 
@@ -255,7 +290,7 @@ with col2:
                         'fips': ':',
                         'highlight': False
                     },
-                    custom_data=['county_name', 'state_name', 'state_abbr', 'fips', 'EF']
+                    custom_data=['county_name', 'state_name', 'state_abbr', 'fips', 'EF', 'carbon_footprint']
                 )
                 
                 # Update hover template for better formatting
@@ -264,6 +299,7 @@ with col2:
                                   "State: %{customdata[1]} (%{customdata[2]})<br>" +
                                   "FIPS: %{customdata[3]}<br>" +
                                   "Carbon Emission Factor: %{customdata[4]}<br>" +
+                                  "Carbon Footprint: %{customdata[5]} kgCO2e/year<br>" +
                                   "<extra></extra>"
                 )
                 
