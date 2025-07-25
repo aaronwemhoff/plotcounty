@@ -135,13 +135,12 @@ with col2:
                 fips_code = selected_row['fips'].iloc[0]
                 state_abbr = selected_row['state_abbr'].iloc[0]
                 
-                # Create a dataframe to highlight only selected county
-                plot_df = pd.DataFrame({
-                    "fips": [fips_code],
-                    "highlight": [1]  # 1 means highlight this county
-                })
+                # Create a dataframe with all counties, highlighting only the selected one
+                plot_df = data.copy()
+                plot_df['highlight'] = 0  # Start with all counties unselected
+                plot_df.loc[plot_df['fips'] == fips_code, 'highlight'] = 1  # Highlight selected county
 
-                # Make the choropleth map
+                # Make the choropleth map showing all counties
                 fig = px.choropleth(
                     plot_df,
                     geojson=geojson,
@@ -156,10 +155,10 @@ with col2:
                 
                 # Customize the map appearance
                 fig.update_geos(
-                    fitbounds="locations", 
-                    visible=False,
+                    projection_type="albers usa",  # Better projection for contiguous US
                     showlakes=True,
-                    lakecolor="lightblue"
+                    lakecolor="lightblue",
+                    bgcolor="white"
                 )
                 
                 fig.update_layout(
