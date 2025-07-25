@@ -147,6 +147,18 @@ with col2:
                     'highlight': 0  # Start with all counties unselected
                 })
                 
+                # Merge with county data to get names for hover
+                plot_df = plot_df.merge(
+                    data[['fips', 'county_name', 'state_name', 'state_abbr']], 
+                    on='fips', 
+                    how='left'
+                )
+                
+                # Fill missing values for counties not in our dataset
+                plot_df['county_name'] = plot_df['county_name'].fillna('Unknown County')
+                plot_df['state_name'] = plot_df['state_name'].fillna('Unknown State')
+                plot_df['state_abbr'] = plot_df['state_abbr'].fillna('??')
+                
                 # Highlight only the selected county
                 plot_df.loc[plot_df['fips'] == fips_code, 'highlight'] = 1
                 
@@ -165,7 +177,14 @@ with col2:
                     range_color=(0, 1),
                     scope="usa",
                     labels={'highlight': 'Selected County'},
-                    title=f"{selected_county}, {state_abbr}"
+                    title=f"{selected_county}, {state_abbr}",
+                    hover_name='county_name',
+                    hover_data={
+                        'state_name': True,
+                        'state_abbr': True,
+                        'fips': True,
+                        'highlight': False  # Hide this from hover
+                    }
                 )
                 
                 # Force showing all counties by updating traces
