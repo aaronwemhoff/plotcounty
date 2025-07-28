@@ -497,7 +497,7 @@ with col2:
                                   "Carbon Emission Factor: %{customdata[4]}<br>" +
                                   "Carbon Footprint: %{customdata[5]} kgCO2e/year<br>" +
                                   "Water Footprint: %{customdata[6]} L/year<br>" +
-                                  "Water Scarcity Footprint: %{customdata[7]}<br>" +
+                                  "Water Scarcity Footprint: %{customdata[7]} L/year<br>" +
                                   "<extra></extra>"
                 )
                 
