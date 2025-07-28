@@ -128,7 +128,8 @@ def format_carbon_footprint_scientific(value):
             return '0.00e+00'
         
         # Format in scientific notation with 2 decimal places (3 significant digits total)
-        return f"{value:.2e}"
+        formatted = f"{value:.2e}"
+        return formatted
     except (ValueError, TypeError, OverflowError):
         return 'N/A'
 
@@ -357,6 +358,14 @@ with col2:
                 # Format emission factor and carbon footprint to 3 significant digits for tooltips
                 plot_df['EF_formatted'] = plot_df['EF'].apply(format_to_3_sig_figs)
                 plot_df['carbon_footprint_formatted'] = plot_df['carbon_footprint'].apply(format_carbon_footprint_scientific)
+                
+                # Debug: Show formatting for selected county
+                selected_county_data = plot_df[plot_df['fips'] == fips_code]
+                if not selected_county_data.empty:
+                    cf_raw = selected_county_data['carbon_footprint'].iloc[0]
+                    cf_formatted = selected_county_data['carbon_footprint_formatted'].iloc[0]
+                    st.write(f"Debug - Raw carbon footprint: {cf_raw}")
+                    st.write(f"Debug - Formatted carbon footprint: {cf_formatted}")
                 
                 # Highlight only the selected county
                 plot_df.loc[plot_df['fips'] == fips_code, 'highlight'] = 1
