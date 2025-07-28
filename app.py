@@ -72,6 +72,22 @@ def format_water_footprint_scientific(value):
     except (ValueError, TypeError, OverflowError):
         return 'N/A'
 
+# Utility function to format water scarcity footprint in scientific notation with 3 significant digits
+def format_water_scarcity_footprint_scientific(value):
+    """Format water scarcity footprint in scientific notation with 3 significant digits"""
+    if value == 'N/A' or pd.isna(value):
+        return 'N/A'
+    try:
+        value = float(value)
+        if value == 0:
+            return '0.00e+00'
+        
+        # Format in scientific notation with 2 decimal places (3 significant digits total)
+        formatted = f"{value:.2e}"
+        return formatted
+    except (ValueError, TypeError, OverflowError):
+        return 'N/A'
+
 # Load counties dataset with state and FIPS info
 @st.cache_data
 def load_data():
@@ -379,6 +395,32 @@ with col2:
                     except (ValueError, TypeError):
                         return water_l_year if water_l_year > 0 else 'N/A'
                 
+                # Calculate water scarcity footprint for each county: WSF = ACF*Wsite + SWI*Psite
+                def calculate_water_scarcity_footprint(acf_value, swi_value, power_kwh_year, water_l_year):
+                    """Calculate water scarcity footprint"""
+                    acf_contribution = 0
+                    swi_contribution = 0
+                    
+                    # Calculate ACF contribution (ACF * Wsite)
+                    if acf_value != 'N/A' and not pd.isna(acf_value):
+                        try:
+                            acf_contribution = float(acf_value) * water_l_year
+                        except (ValueError, TypeError):
+                            acf_contribution = 0
+                    
+                    # Calculate SWI contribution (SWI * Psite)
+                    if swi_value != 'N/A' and not pd.isna(swi_value):
+                        try:
+                            swi_contribution = float(swi_value) * power_kwh_year
+                        except (ValueError, TypeError):
+                            swi_contribution = 0
+                    
+                    # Return total WSF or 'N/A' if both contributions are zero and no inputs
+                    total_wsf = acf_contribution + swi_contribution
+                    if total_wsf == 0 and water_l_year == 0 and power_kwh_year == 0:
+                        return 'N/A'
+                    return total_wsf
+                
                 # Add carbon footprint column
                 plot_df['carbon_footprint'] = plot_df['EF'].apply(
                     lambda ef: calculate_carbon_footprint(ef, onsite_power_kwh_per_year)
@@ -389,10 +431,18 @@ with col2:
                     lambda ewif: calculate_water_footprint(ewif, onsite_power_kwh_per_year, onsite_water_l_per_year)
                 )
                 
+                # Add water scarcity footprint column
+                plot_df['water_scarcity_footprint'] = plot_df.apply(
+                    lambda row: calculate_water_scarcity_footprint(
+                        row['ACF'], row['SWI'], onsite_power_kwh_per_year, onsite_water_l_per_year
+                    ), axis=1
+                )
+                
                 # Format emission factor and carbon footprint to 3 significant digits for tooltips
                 plot_df['EF_formatted'] = plot_df['EF'].apply(format_to_3_sig_figs)
                 plot_df['carbon_footprint_formatted'] = plot_df['carbon_footprint'].apply(format_carbon_footprint_scientific)
                 plot_df['water_footprint_formatted'] = plot_df['water_footprint'].apply(format_water_footprint_scientific)
+                plot_df['water_scarcity_footprint_formatted'] = plot_df['water_scarcity_footprint'].apply(format_water_scarcity_footprint_scientific)
                 
                 # Debug: Show formatting for selected county
                 selected_county_data = plot_df[plot_df['fips'] == fips_code]
@@ -401,10 +451,14 @@ with col2:
                     cf_formatted = selected_county_data['carbon_footprint_formatted'].iloc[0]
                     wf_raw = selected_county_data['water_footprint'].iloc[0]
                     wf_formatted = selected_county_data['water_footprint_formatted'].iloc[0]
+                    wsf_raw = selected_county_data['water_scarcity_footprint'].iloc[0]
+                    wsf_formatted = selected_county_data['water_scarcity_footprint_formatted'].iloc[0]
                     st.write(f"Debug - Raw carbon footprint: {cf_raw}")
                     st.write(f"Debug - Formatted carbon footprint: {cf_formatted}")
                     st.write(f"Debug - Raw water footprint: {wf_raw}")
                     st.write(f"Debug - Formatted water footprint: {wf_formatted}")
+                    st.write(f"Debug - Raw water scarcity footprint: {wsf_raw}")
+                    st.write(f"Debug - Formatted water scarcity footprint: {wsf_formatted}")
                 
                 # Highlight only the selected county
                 plot_df.loc[plot_df['fips'] == fips_code, 'highlight'] = 1
@@ -432,7 +486,7 @@ with col2:
                         'fips': ':',
                         'highlight': False
                     },
-                    custom_data=['county_name', 'state_name', 'state_abbr', 'fips', 'EF_formatted', 'carbon_footprint_formatted', 'water_footprint_formatted']
+                    custom_data=['county_name', 'state_name', 'state_abbr', 'fips', 'EF_formatted', 'carbon_footprint_formatted', 'water_footprint_formatted', 'water_scarcity_footprint_formatted']
                 )
                 
                 # Update hover template for better formatting with 3 significant digits
@@ -443,6 +497,7 @@ with col2:
                                   "Carbon Emission Factor: %{customdata[4]}<br>" +
                                   "Carbon Footprint: %{customdata[5]} kgCO2e/year<br>" +
                                   "Water Footprint: %{customdata[6]} L/year<br>" +
+                                  "Water Scarcity Footprint: %{customdata[7]}<br>" +
                                   "<extra></extra>"
                 )
                 
