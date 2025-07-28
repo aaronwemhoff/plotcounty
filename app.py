@@ -117,6 +117,21 @@ def format_to_3_sig_figs(value):
     except (ValueError, TypeError, OverflowError):
         return 'N/A'
 
+# Utility function to format carbon footprint in scientific notation with 3 significant digits
+def format_carbon_footprint_scientific(value):
+    """Format carbon footprint in scientific notation with 3 significant digits"""
+    if value == 'N/A' or pd.isna(value):
+        return 'N/A'
+    try:
+        value = float(value)
+        if value == 0:
+            return '0.00e+00'
+        
+        # Format in scientific notation with 2 decimal places (3 significant digits total)
+        return f"{value:.2e}"
+    except (ValueError, TypeError, OverflowError):
+        return 'N/A'
+
 # Load data with error handling
 with st.spinner("Loading data..."):
     data = load_data()
@@ -341,7 +356,7 @@ with col2:
                 
                 # Format emission factor and carbon footprint to 3 significant digits for tooltips
                 plot_df['EF_formatted'] = plot_df['EF'].apply(format_to_3_sig_figs)
-                plot_df['carbon_footprint_formatted'] = plot_df['carbon_footprint'].apply(format_to_3_sig_figs)
+                plot_df['carbon_footprint_formatted'] = plot_df['carbon_footprint'].apply(format_carbon_footprint_scientific)
                 
                 # Highlight only the selected county
                 plot_df.loc[plot_df['fips'] == fips_code, 'highlight'] = 1
