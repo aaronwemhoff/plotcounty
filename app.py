@@ -350,22 +350,45 @@ with col2:
                     except (ValueError, TypeError):
                         return 'N/A'
                 
+                # Calculate water footprint for each county: WF = Wsite + EWIF*Psite
+                def calculate_water_footprint(ewif_value, power_kwh_year, water_l_year):
+                    """Calculate water footprint in L/year"""
+                    if ewif_value == 'N/A' or pd.isna(ewif_value):
+                        # If EWIF is not available, return only onsite water consumption
+                        return water_l_year if water_l_year > 0 else 'N/A'
+                    try:
+                        ewif_contribution = float(ewif_value) * power_kwh_year
+                        total_wf = water_l_year + ewif_contribution
+                        return total_wf
+                    except (ValueError, TypeError):
+                        return water_l_year if water_l_year > 0 else 'N/A'
+                
                 # Add carbon footprint column
                 plot_df['carbon_footprint'] = plot_df['EF'].apply(
                     lambda ef: calculate_carbon_footprint(ef, onsite_power_kwh_per_year)
                 )
                 
+                # Add water footprint column
+                plot_df['water_footprint'] = plot_df['EWIF'].apply(
+                    lambda ewif: calculate_water_footprint(ewif, onsite_power_kwh_per_year, onsite_water_l_per_year)
+                )
+                
                 # Format emission factor and carbon footprint to 3 significant digits for tooltips
                 plot_df['EF_formatted'] = plot_df['EF'].apply(format_to_3_sig_figs)
                 plot_df['carbon_footprint_formatted'] = plot_df['carbon_footprint'].apply(format_carbon_footprint_scientific)
+                plot_df['water_footprint_formatted'] = plot_df['water_footprint'].apply(format_water_footprint_scientific)
                 
                 # Debug: Show formatting for selected county
                 selected_county_data = plot_df[plot_df['fips'] == fips_code]
                 if not selected_county_data.empty:
                     cf_raw = selected_county_data['carbon_footprint'].iloc[0]
                     cf_formatted = selected_county_data['carbon_footprint_formatted'].iloc[0]
+                    wf_raw = selected_county_data['water_footprint'].iloc[0]
+                    wf_formatted = selected_county_data['water_footprint_formatted'].iloc[0]
                     st.write(f"Debug - Raw carbon footprint: {cf_raw}")
                     st.write(f"Debug - Formatted carbon footprint: {cf_formatted}")
+                    st.write(f"Debug - Raw water footprint: {wf_raw}")
+                    st.write(f"Debug - Formatted water footprint: {wf_formatted}")
                 
                 # Highlight only the selected county
                 plot_df.loc[plot_df['fips'] == fips_code, 'highlight'] = 1
@@ -393,7 +416,7 @@ with col2:
                         'fips': ':',
                         'highlight': False
                     },
-                    custom_data=['county_name', 'state_name', 'state_abbr', 'fips', 'EF_formatted', 'carbon_footprint_formatted']
+                    custom_data=['county_name', 'state_name', 'state_abbr', 'fips', 'EF_formatted', 'carbon_footprint_formatted', 'water_footprint_formatted']
                 )
                 
                 # Update hover template for better formatting with 3 significant digits
@@ -403,6 +426,7 @@ with col2:
                                   "FIPS: %{customdata[3]}<br>" +
                                   "Carbon Emission Factor: %{customdata[4]}<br>" +
                                   "Carbon Footprint: %{customdata[5]} kgCO2e/year<br>" +
+                                  "Water Footprint: %{customdata[6]} L/year<br>" +
                                   "<extra></extra>"
                 )
                 
