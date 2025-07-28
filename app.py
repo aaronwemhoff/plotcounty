@@ -94,6 +94,29 @@ def load_geojson():
         st.error(f"Error loading map data: {e}")
         return None
 
+# Utility function to format numbers to 3 significant digits
+def format_to_3_sig_figs(value):
+    """Format a number to 3 significant digits"""
+    if value == 'N/A' or pd.isna(value):
+        return 'N/A'
+    try:
+        value = float(value)
+        if value == 0:
+            return '0.00'
+        
+        import math
+        # Calculate the number of digits before the decimal point
+        if abs(value) >= 1:
+            digits_before_decimal = int(math.floor(math.log10(abs(value)))) + 1
+            decimal_places = max(0, 3 - digits_before_decimal)
+        else:
+            # For numbers less than 1, find the first non-zero digit
+            decimal_places = -int(math.floor(math.log10(abs(value)))) + 2
+        
+        return f"{value:.{decimal_places}f}"
+    except (ValueError, TypeError, OverflowError):
+        return 'N/A'
+
 # Load data with error handling
 with st.spinner("Loading data..."):
     data = load_data()
@@ -164,6 +187,36 @@ with col1:
     if onsite_power > 0:
         st.info(f"**On-Site Power:** {onsite_power:,.2f} {power_units}")
     
+    # Add separator
+    st.markdown("---")
+    
+    # On-site water consumption input section
+    st.subheader("On-Site Water Consumption")
+    
+    # Create two columns for water input and units
+    water_col1, water_col2 = st.columns([2, 1])
+    
+    with water_col1:
+        onsite_water = st.number_input(
+            "On-Site Water:",
+            min_value=0.0,
+            value=0.0,
+            step=1.0,
+            format="%.2f",
+            help="Enter the amount of on-site water consumption"
+        )
+    
+    with water_col2:
+        water_units = st.selectbox(
+            "Units:",
+            ["L/yr", "L/mo", "L/s", "gpm", "gal/mo"],
+            help="Select the units for on-site water consumption"
+        )
+    
+    # Display the entered values
+    if onsite_water > 0:
+        st.info(f"**On-Site Water:** {onsite_water:,.2f} {water_units}")
+    
     # Function to convert power to kWh/year
     def convert_to_kwh_per_year(power_value, units):
         """Convert power input to kWh/year based on units"""
@@ -178,11 +231,33 @@ with col1:
         else:
             return 0
     
+    # Function to convert water to L/year
+    def convert_to_liters_per_year(water_value, units):
+        """Convert water input to L/year based on units"""
+        if units == "L/yr":
+            return water_value
+        elif units == "L/mo":
+            return water_value * 12  # 12 months per year
+        elif units == "L/s":
+            return water_value * 31557600  # seconds per year (365.25 * 24 * 3600)
+        elif units == "gpm":  # gallons per minute
+            return water_value * 525600 * 3.78541  # minutes per year * L per gallon
+        elif units == "gal/mo":  # gallons per month
+            return water_value * 12 * 3.78541  # 12 months * L per gallon
+        else:
+            return 0
+    
     # Convert on-site power to kWh/year
     onsite_power_kwh_per_year = convert_to_kwh_per_year(onsite_power, power_units)
     
+    # Convert on-site water to L/year
+    onsite_water_l_per_year = convert_to_liters_per_year(onsite_water, water_units)
+    
     if onsite_power > 0:
-        st.write(f"**Converted:** {onsite_power_kwh_per_year:,.0f} kWh/year")
+        st.write(f"**Converted Power:** {onsite_power_kwh_per_year:,.0f} kWh/year")
+    
+    if onsite_water > 0:
+        st.write(f"**Converted Water:** {onsite_water_l_per_year:,.0f} L/year")
     
     st.markdown("---")
     
@@ -264,6 +339,10 @@ with col2:
                     lambda ef: calculate_carbon_footprint(ef, onsite_power_kwh_per_year)
                 )
                 
+                # Format emission factor and carbon footprint to 3 significant digits for tooltips
+                plot_df['EF_formatted'] = plot_df['EF'].apply(format_to_3_sig_figs)
+                plot_df['carbon_footprint_formatted'] = plot_df['carbon_footprint'].apply(format_to_3_sig_figs)
+                
                 # Highlight only the selected county
                 plot_df.loc[plot_df['fips'] == fips_code, 'highlight'] = 1
                 
@@ -290,10 +369,10 @@ with col2:
                         'fips': ':',
                         'highlight': False
                     },
-                    custom_data=['county_name', 'state_name', 'state_abbr', 'fips', 'EF', 'carbon_footprint']
+                    custom_data=['county_name', 'state_name', 'state_abbr', 'fips', 'EF_formatted', 'carbon_footprint_formatted']
                 )
                 
-                # Update hover template for better formatting
+                # Update hover template for better formatting with 3 significant digits
                 fig.update_traces(
                     hovertemplate="<b>%{customdata[0]}</b><br>" +
                                   "State: %{customdata[1]} (%{customdata[2]})<br>" +
