@@ -17,6 +17,61 @@ st.set_page_config(
 st.title("🗺️ U.S. County Selector")
 st.markdown("Select a state and county to see it highlighted on the map!")
 
+# Utility function to format numbers to 3 significant digits
+def format_to_3_sig_figs(value):
+    """Format a number to 3 significant digits"""
+    if value == 'N/A' or pd.isna(value):
+        return 'N/A'
+    try:
+        value = float(value)
+        if value == 0:
+            return '0.00'
+        
+        import math
+        # Calculate the number of digits before the decimal point
+        if abs(value) >= 1:
+            digits_before_decimal = int(math.floor(math.log10(abs(value)))) + 1
+            decimal_places = max(0, 3 - digits_before_decimal)
+        else:
+            # For numbers less than 1, find the first non-zero digit
+            decimal_places = -int(math.floor(math.log10(abs(value)))) + 2
+        
+        return f"{value:.{decimal_places}f}"
+    except (ValueError, TypeError, OverflowError):
+        return 'N/A'
+
+# Utility function to format carbon footprint in scientific notation with 3 significant digits
+def format_carbon_footprint_scientific(value):
+    """Format carbon footprint in scientific notation with 3 significant digits"""
+    if value == 'N/A' or pd.isna(value):
+        return 'N/A'
+    try:
+        value = float(value)
+        if value == 0:
+            return '0.00e+00'
+        
+        # Format in scientific notation with 2 decimal places (3 significant digits total)
+        formatted = f"{value:.2e}"
+        return formatted
+    except (ValueError, TypeError, OverflowError):
+        return 'N/A'
+
+# Utility function to format water footprint in scientific notation with 3 significant digits
+def format_water_footprint_scientific(value):
+    """Format water footprint in scientific notation with 3 significant digits"""
+    if value == 'N/A' or pd.isna(value):
+        return 'N/A'
+    try:
+        value = float(value)
+        if value == 0:
+            return '0.00e+00'
+        
+        # Format in scientific notation with 2 decimal places (3 significant digits total)
+        formatted = f"{value:.2e}"
+        return formatted
+    except (ValueError, TypeError, OverflowError):
+        return 'N/A'
+
 # Load counties dataset with state and FIPS info
 @st.cache_data
 def load_data():
@@ -94,44 +149,35 @@ def load_geojson():
         st.error(f"Error loading map data: {e}")
         return None
 
-# Utility function to format numbers to 3 significant digits
-def format_to_3_sig_figs(value):
-    """Format a number to 3 significant digits"""
-    if value == 'N/A' or pd.isna(value):
-        return 'N/A'
-    try:
-        value = float(value)
-        if value == 0:
-            return '0.00'
-        
-        import math
-        # Calculate the number of digits before the decimal point
-        if abs(value) >= 1:
-            digits_before_decimal = int(math.floor(math.log10(abs(value)))) + 1
-            decimal_places = max(0, 3 - digits_before_decimal)
-        else:
-            # For numbers less than 1, find the first non-zero digit
-            decimal_places = -int(math.floor(math.log10(abs(value)))) + 2
-        
-        return f"{value:.{decimal_places}f}"
-    except (ValueError, TypeError, OverflowError):
-        return 'N/A'
+# Function to convert power to kWh/year
+def convert_to_kwh_per_year(power_value, units):
+    """Convert power input to kWh/year based on units"""
+    if units == "kWh/yr":
+        return power_value
+    elif units == "kWh/mo":
+        return power_value * 12  # 12 months per year
+    elif units == "kW":
+        return power_value * 8760  # 8760 hours per year
+    elif units == "MW":
+        return power_value * 1000 * 8760  # Convert MW to kW, then to kWh/year
+    else:
+        return 0
 
-# Utility function to format carbon footprint in scientific notation with 3 significant digits
-def format_carbon_footprint_scientific(value):
-    """Format carbon footprint in scientific notation with 3 significant digits"""
-    if value == 'N/A' or pd.isna(value):
-        return 'N/A'
-    try:
-        value = float(value)
-        if value == 0:
-            return '0.00e+00'
-        
-        # Format in scientific notation with 2 decimal places (3 significant digits total)
-        formatted = f"{value:.2e}"
-        return formatted
-    except (ValueError, TypeError, OverflowError):
-        return 'N/A'
+# Function to convert water to L/year
+def convert_to_liters_per_year(water_value, units):
+    """Convert water input to L/year based on units"""
+    if units == "L/yr":
+        return water_value
+    elif units == "L/mo":
+        return water_value * 12  # 12 months per year
+    elif units == "L/s":
+        return water_value * 31557600  # seconds per year (365.25 * 24 * 3600)
+    elif units == "gpm":  # gallons per minute
+        return water_value * 525600 * 3.78541  # minutes per year * L per gallon
+    elif units == "gal/mo":  # gallons per month
+        return water_value * 12 * 3.78541  # 12 months * L per gallon
+    else:
+        return 0
 
 # Load data with error handling
 with st.spinner("Loading data..."):
@@ -232,36 +278,6 @@ with col1:
     # Display the entered values
     if onsite_water > 0:
         st.info(f"**On-Site Water:** {onsite_water:,.2f} {water_units}")
-    
-    # Function to convert power to kWh/year
-    def convert_to_kwh_per_year(power_value, units):
-        """Convert power input to kWh/year based on units"""
-        if units == "kWh/yr":
-            return power_value
-        elif units == "kWh/mo":
-            return power_value * 12  # 12 months per year
-        elif units == "kW":
-            return power_value * 8760  # 8760 hours per year
-        elif units == "MW":
-            return power_value * 1000 * 8760  # Convert MW to kW, then to kWh/year
-        else:
-            return 0
-    
-    # Function to convert water to L/year
-    def convert_to_liters_per_year(water_value, units):
-        """Convert water input to L/year based on units"""
-        if units == "L/yr":
-            return water_value
-        elif units == "L/mo":
-            return water_value * 12  # 12 months per year
-        elif units == "L/s":
-            return water_value * 31557600  # seconds per year (365.25 * 24 * 3600)
-        elif units == "gpm":  # gallons per minute
-            return water_value * 525600 * 3.78541  # minutes per year * L per gallon
-        elif units == "gal/mo":  # gallons per month
-            return water_value * 12 * 3.78541  # 12 months * L per gallon
-        else:
-            return 0
     
     # Convert on-site power to kWh/year
     onsite_power_kwh_per_year = convert_to_kwh_per_year(onsite_power, power_units)
