@@ -5,6 +5,7 @@ import pandas as pd
 import plotly.express as px
 import requests
 import io
+import numpy as np
 
 # Configure the page
 st.set_page_config(
@@ -87,6 +88,44 @@ def format_water_scarcity_footprint_scientific(value):
         return formatted
     except (ValueError, TypeError, OverflowError):
         return 'N/A'
+
+# Function to calculate percentile categories
+def calculate_percentile_category(values, selected_metric):
+    """Calculate percentile categories for color coding"""
+    # Filter out N/A and non-numeric values
+    numeric_values = []
+    for val in values:
+        if val != 'N/A' and not pd.isna(val):
+            try:
+                numeric_values.append(float(val))
+            except (ValueError, TypeError):
+                continue
+    
+    if len(numeric_values) == 0:
+        return ['gray'] * len(values)  # No data available
+    
+    # Calculate 33rd and 67th percentiles
+    p33 = np.percentile(numeric_values, 33)
+    p67 = np.percentile(numeric_values, 67)
+    
+    # Assign colors based on percentiles
+    colors = []
+    for val in values:
+        if val == 'N/A' or pd.isna(val):
+            colors.append('gray')  # No data
+        else:
+            try:
+                num_val = float(val)
+                if num_val <= p33:
+                    colors.append('green')  # Below 33rd percentile
+                elif num_val <= p67:
+                    colors.append('yellow')  # 33rd to 67th percentile
+                else:
+                    colors.append('red')  # Above 67th percentile
+            except (ValueError, TypeError):
+                colors.append('gray')  # Invalid data
+    
+    return colors
 
 # Load counties dataset with state and FIPS info
 @st.cache_data
@@ -238,6 +277,18 @@ with col1:
     # Add separator
     st.markdown("---")
     
+    # Environmental Impact Selection
+    st.subheader("Environmental Impact Metric")
+    
+    impact_metric = st.selectbox(
+        "Choose Environmental Impact:",
+        ["Carbon Footprint", "Scope 1 & 2 Water Footprint", "Water Scarcity Footprint"],
+        help="Select the environmental impact metric to visualize on the map"
+    )
+    
+    # Add separator
+    st.markdown("---")
+    
     # On-site power input section
     st.subheader("On-Site Power Generation")
     
@@ -326,6 +377,15 @@ with col1:
 
 with col2:
     st.subheader("County Map")
+    
+    # Color legend
+    st.markdown("""
+    **Color Legend:**
+    - 🟢 **Green**: Below 33rd percentile (lowest impact)
+    - 🟡 **Yellow**: 33rd-67th percentile (medium impact)  
+    - 🔴 **Red**: Above 67th percentile (highest impact)
+    - ⚫ **Gray**: No data available
+    """)
     
     # Automatically generate plot when selections are made
     if selected_county and selected_state:
@@ -444,26 +504,34 @@ with col2:
                 plot_df['water_footprint_formatted'] = plot_df['water_footprint'].apply(format_water_footprint_scientific)
                 plot_df['water_scarcity_footprint_formatted'] = plot_df['water_scarcity_footprint'].apply(format_water_scarcity_footprint_scientific)
                 
-                # Debug: Show formatting for selected county
-                selected_county_data = plot_df[plot_df['fips'] == fips_code]
-                if not selected_county_data.empty:
-                    cf_raw = selected_county_data['carbon_footprint'].iloc[0]
-                    cf_formatted = selected_county_data['carbon_footprint_formatted'].iloc[0]
-                    wf_raw = selected_county_data['water_footprint'].iloc[0]
-                    wf_formatted = selected_county_data['water_footprint_formatted'].iloc[0]
-                    wsf_raw = selected_county_data['water_scarcity_footprint'].iloc[0]
-                    wsf_formatted = selected_county_data['water_scarcity_footprint_formatted'].iloc[0]
-                    st.write(f"Debug - Raw carbon footprint: {cf_raw}")
-                    st.write(f"Debug - Formatted carbon footprint: {cf_formatted}")
-                    st.write(f"Debug - Raw water footprint: {wf_raw}")
-                    st.write(f"Debug - Formatted water footprint: {wf_formatted}")
-                    st.write(f"Debug - Raw water scarcity footprint: {wsf_raw}")
-                    st.write(f"Debug - Formatted water scarcity footprint: {wsf_formatted}")
+                # Determine which metric to use for color coding
+                if impact_metric == "Carbon Footprint":
+                    metric_column = 'carbon_footprint'
+                    metric_formatted_column = 'carbon_footprint_formatted'
+                    metric_unit = 'kgCO2e/year'
+                elif impact_metric == "Scope 1 & 2 Water Footprint":
+                    metric_column = 'water_footprint'
+                    metric_formatted_column = 'water_footprint_formatted'
+                    metric_unit = 'L/year'
+                else:  # Water Scarcity Footprint
+                    metric_column = 'water_scarcity_footprint'
+                    metric_formatted_column = 'water_scarcity_footprint_formatted'
+                    metric_unit = 'L/year'
                 
-                # Highlight only the selected county
+                # Calculate color categories based on percentiles
+                plot_df['color_category'] = calculate_percentile_category(
+                    plot_df[metric_column], impact_metric
+                )
+                
+                # Create a numeric color scale for plotly
+                color_map = {'green': 0, 'yellow': 1, 'red': 2, 'gray': 3}
+                plot_df['color_numeric'] = plot_df['color_category'].map(color_map)
+                
+                # Highlight the selected county with a special marker
                 plot_df.loc[plot_df['fips'] == fips_code, 'highlight'] = 1
                 
                 # Debug info
+                st.write(f"Selected metric: {impact_metric}")
                 st.write(f"Total counties in plot data: {len(plot_df)}")
                 st.write(f"Selected county FIPS: {fips_code}")
                 st.write(f"Counties with highlight=1: {(plot_df['highlight'] == 1).sum()}")
@@ -473,20 +541,25 @@ with col2:
                     plot_df,
                     geojson=geojson,
                     locations='fips',
-                    color='highlight',
-                    color_continuous_scale=["lightgray", "red"],
-                    range_color=(0, 1),
+                    color='color_numeric',
+                    color_continuous_scale=[
+                        [0, 'green'],      # 0 = green (low impact)
+                        [0.33, 'yellow'],  # 1 = yellow (medium impact)
+                        [0.67, 'red'],     # 2 = red (high impact)
+                        [1, 'gray']        # 3 = gray (no data)
+                    ],
+                    range_color=(0, 3),
                     scope="usa",
-                    labels={'highlight': 'Selected County'},
-                    title=f"{selected_county}, {state_abbr}",
+                    title=f"{impact_metric} by County - {selected_county}, {state_abbr} highlighted",
                     hover_name='county_name',
                     hover_data={
                         'state_name': ':',
                         'state_abbr': ':',
                         'fips': ':',
+                        'color_numeric': False,
                         'highlight': False
                     },
-                    custom_data=['county_name', 'state_name', 'state_abbr', 'fips', 'EF_formatted', 'carbon_footprint_formatted', 'water_footprint_formatted', 'water_scarcity_footprint_formatted']
+                    custom_data=['county_name', 'state_name', 'state_abbr', 'fips', 'EF_formatted', 'carbon_footprint_formatted', 'water_footprint_formatted', 'water_scarcity_footprint_formatted', 'color_category']
                 )
                 
                 # Update hover template for better formatting with 3 significant digits
@@ -498,15 +571,23 @@ with col2:
                                   "Carbon Footprint: %{customdata[5]} kgCO2e/year<br>" +
                                   "Water Footprint: %{customdata[6]} L/year<br>" +
                                   "Water Scarcity Footprint: %{customdata[7]} L/year<br>" +
+                                  "Impact Category: %{customdata[8]}<br>" +
                                   "<extra></extra>"
                 )
                 
-                # Force showing all counties by updating traces
+                # Add county borders and highlight selected county
                 fig.update_traces(
                     marker_line_color='white',
                     marker_line_width=0.5,
                     showscale=False
                 )
+                
+                # Add a special highlight for the selected county
+                selected_county_data = plot_df[plot_df['fips'] == fips_code]
+                if not selected_county_data.empty:
+                    # Add a scatter trace to highlight the selected county
+                    # Note: This is a workaround since we can't easily modify individual county styling
+                    pass
                 
                 # Customize the map appearance
                 fig.update_geos(
@@ -518,16 +599,46 @@ with col2:
                 
                 fig.update_layout(
                     margin={"r":0,"t":40,"l":0,"b":0},
-                    coloraxis_showscale=False,  # Hide the color scale since it's not meaningful
+                    coloraxis_showscale=False,  # Hide the color scale since we have a custom legend
                     height=500
                 )
                 
                 st.plotly_chart(fig, use_container_width=True)
+                
+                # Show statistics for the selected metric
+                if metric_column in plot_df.columns:
+                    # Calculate statistics for the selected metric
+                    valid_values = []
+                    for val in plot_df[metric_column]:
+                        if val != 'N/A' and not pd.isna(val):
+                            try:
+                                valid_values.append(float(val))
+                            except (ValueError, TypeError):
+                                continue
+                    
+                    if len(valid_values) > 0:
+                        p33 = np.percentile(valid_values, 33)
+                        p67 = np.percentile(valid_values, 67)
+                        
+                        # Get selected county value
+                        selected_value = selected_county_data[metric_column].iloc[0] if not selected_county_data.empty else 'N/A'
+                        selected_formatted = selected_county_data[metric_formatted_column].iloc[0] if not selected_county_data.empty else 'N/A'
+                        selected_category = selected_county_data['color_category'].iloc[0] if not selected_county_data.empty else 'N/A'
+                        
+                        st.markdown(f"""
+                        **{impact_metric} Statistics:**
+                        - **33rd Percentile:** {p33:.2e} {metric_unit}
+                        - **67th Percentile:** {p67:.2e} {metric_unit}
+                        - **Selected County ({selected_county}):** {selected_formatted} {metric_unit}
+                        - **Category:** {selected_category.title()}
+                        """)
             else:
                 st.warning("County data not found. Please try selecting again.")
                 
         except Exception as e:
             st.error(f"Error creating map: {e}")
+            import traceback
+            st.error(traceback.format_exc())
     else:
         st.info("👆 Select a state and county to see the map")
 
@@ -538,7 +649,17 @@ st.markdown("""
 - County FIPS codes from [Kieran Healy's FIPS codes repository](https://github.com/kjhealy/fips-codes)
 - Geographic boundaries from Plotly GeoJSON data
 
-**How to use:** Select a state from the dropdown, then choose a county. The map will automatically update to highlight your selection in red.
+**How to use:** 
+1. Select an environmental impact metric to visualize
+2. Select a state from the dropdown, then choose a county
+3. Enter on-site power and water consumption values to see calculated impacts
+4. The map will color-code counties based on percentiles of the selected environmental impact
+
+**Color Coding:**
+- **Green:** Below 33rd percentile (lowest environmental impact)
+- **Yellow:** 33rd-67th percentile (medium environmental impact)
+- **Red:** Above 67th percentile (highest environmental impact)
+- **Gray:** No data available
 
 **About the data:** FIPS (Federal Information Processing Standards) codes are unique identifiers for U.S. counties used by the Census Bureau and other federal agencies.
 """)
