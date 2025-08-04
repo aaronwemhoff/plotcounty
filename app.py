@@ -459,21 +459,6 @@ with col2:
                     st.write(f"Debug - Formatted water footprint: {wf_formatted}")
                     st.write(f"Debug - Raw water scarcity footprint: {wsf_raw}")
                     st.write(f"Debug - Formatted water scarcity footprint: {wsf_formatted}")
-                    
-                    # Check what's actually in the custom_data array
-                    selected_data = plot_df[plot_df['fips'] == fips_code]
-                    if not selected_data.empty:
-                        custom_data_values = [
-                            selected_data['county_name'].iloc[0],
-                            selected_data['state_name'].iloc[0], 
-                            selected_data['state_abbr'].iloc[0],
-                            selected_data['fips'].iloc[0],
-                            selected_data['EF_formatted'].iloc[0],
-                            selected_data['carbon_footprint_formatted'].iloc[0],
-                            selected_data['water_footprint_formatted'].iloc[0],
-                            selected_data['water_scarcity_footprint_formatted'].iloc[0]
-                        ]
-                        st.write(f"Debug - Custom data array: {custom_data_values}")
                 
                 # Highlight only the selected county
                 plot_df.loc[plot_df['fips'] == fips_code, 'highlight'] = 1
