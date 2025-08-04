@@ -15,8 +15,8 @@ st.set_page_config(
 )
 
 # Title of the app
-st.title("🗺️ U.S. County Selector")
-st.markdown("Select a state and county to see it highlighted on the map!")
+st.title("🗺️ U.S. County Environmental Impact Viewer")
+st.markdown("Visualize environmental impacts across all U.S. counties!")
 
 # Utility function to format numbers to 3 significant digits
 def format_to_3_sig_figs(value):
@@ -253,29 +253,6 @@ if emission_data is None:
 col1, col2 = st.columns([1, 2])
 
 with col1:
-    st.subheader("Select Location")
-    
-    # Drop-down menu for selecting state
-    states = sorted(data['state_name'].unique())
-    selected_state = st.selectbox(
-        "Choose a U.S. State:", 
-        states,
-        help="Select the state you want to explore"
-    )
-
-    # Get list of counties in the selected state
-    filtered_data = data[data['state_name'] == selected_state]
-    counties = sorted(filtered_data['county_name'].unique())
-
-    # Drop-down menu for selecting county
-    selected_county = st.selectbox(
-        "Choose a County:", 
-        counties,
-        help="Select the county within the chosen state"
-    )
-    
-    # Add separator
-    st.markdown("---")
     
     # Environmental Impact Selection
     st.subheader("Environmental Impact Metric")
@@ -358,22 +335,7 @@ with col1:
     if onsite_water > 0:
         st.write(f"**Converted Water:** {onsite_water_l_per_year:,.0f} L/year")
     
-    st.markdown("---")
-    
-    # Show some info about the selected location
-    if selected_county:
-        selected_row = filtered_data[filtered_data['county_name'] == selected_county]
-        if not selected_row.empty:
-            fips_code = selected_row['fips'].iloc[0]
-            state_abbr = selected_row['state_abbr'].iloc[0]
-            
-            st.info(f"""
-            **Selected:** {selected_county}, {state_abbr}
-            
-            **FIPS Code:** {fips_code}
-            
-            **Full State Name:** {selected_state}
-            """)
+
 
 with col2:
     st.subheader("County Map")
@@ -387,260 +349,230 @@ with col2:
     - ⚫ **Gray**: No data available
     """)
     
-    # Automatically generate plot when selections are made
-    if selected_county and selected_state:
-        try:
-            # Get the selected county data
-            selected_row = filtered_data[filtered_data['county_name'] == selected_county]
+    # Automatically generate plot
+    try:
+        # Extract all FIPS codes from the GeoJSON to ensure we show all counties
+        all_fips = []
+        for feature in geojson['features']:
+            fips = feature['id']
+            all_fips.append(fips)
+        
+        # Create a dataframe with ALL counties from the GeoJSON
+        plot_df = pd.DataFrame({
+            'fips': all_fips
+        })
+        
+        # Merge with county data to get names for hover
+        plot_df = plot_df.merge(
+            data[['fips', 'county_name', 'state_name', 'state_abbr']], 
+            on='fips', 
+            how='left'
+        )
+        
+        # Merge with emission data
+        plot_df = plot_df.merge(
+            emission_data[['fips', 'EF', 'EWIF', 'ACF', 'SWI']], 
+            on='fips', 
+            how='left'
+        )
+        
+        # Fill missing values for counties not in our datasets
+        plot_df['county_name'] = plot_df['county_name'].fillna('Unknown County')
+        plot_df['state_name'] = plot_df['state_name'].fillna('Unknown State')
+        plot_df['state_abbr'] = plot_df['state_abbr'].fillna('??')
+        plot_df['EF'] = plot_df['EF'].fillna('N/A')
+        plot_df['EWIF'] = plot_df['EWIF'].fillna('N/A')
+        plot_df['ACF'] = plot_df['ACF'].fillna('N/A')
+        plot_df['SWI'] = plot_df['SWI'].fillna('N/A')
+        
+        # Calculate carbon footprint for each county
+        def calculate_carbon_footprint(ef_value, power_kwh_year):
+            """Calculate carbon footprint in kgCO2e/year"""
+            if ef_value == 'N/A' or pd.isna(ef_value) or power_kwh_year == 0:
+                return 'N/A'
+            try:
+                return float(ef_value) * power_kwh_year
+            except (ValueError, TypeError):
+                return 'N/A'
+        
+        # Calculate water footprint for each county: WF = Wsite + EWIF*Psite
+        def calculate_water_footprint(ewif_value, power_kwh_year, water_l_year):
+            """Calculate water footprint in L/year"""
+            if ewif_value == 'N/A' or pd.isna(ewif_value):
+                # If EWIF is not available, return only onsite water consumption
+                return water_l_year if water_l_year > 0 else 'N/A'
+            try:
+                ewif_contribution = float(ewif_value) * power_kwh_year
+                total_wf = water_l_year + ewif_contribution
+                return total_wf
+            except (ValueError, TypeError):
+                return water_l_year if water_l_year > 0 else 'N/A'
+        
+        # Calculate water scarcity footprint for each county: WSF = ACF*Wsite + SWI*Psite
+        def calculate_water_scarcity_footprint(acf_value, swi_value, power_kwh_year, water_l_year):
+            """Calculate water scarcity footprint"""
+            acf_contribution = 0
+            swi_contribution = 0
             
-            if not selected_row.empty:
-                fips_code = selected_row['fips'].iloc[0]
-                state_abbr = selected_row['state_abbr'].iloc[0]
-                
-                # Extract all FIPS codes from the GeoJSON to ensure we show all counties
-                all_fips = []
-                for feature in geojson['features']:
-                    fips = feature['id']
-                    all_fips.append(fips)
-                
-                # Create a dataframe with ALL counties from the GeoJSON
-                plot_df = pd.DataFrame({
-                    'fips': all_fips,
-                    'highlight': 0  # Start with all counties unselected
-                })
-                
-                # Merge with county data to get names for hover
-                plot_df = plot_df.merge(
-                    data[['fips', 'county_name', 'state_name', 'state_abbr']], 
-                    on='fips', 
-                    how='left'
-                )
-                
-                # Merge with emission data
-                plot_df = plot_df.merge(
-                    emission_data[['fips', 'EF', 'EWIF', 'ACF', 'SWI']], 
-                    on='fips', 
-                    how='left'
-                )
-                
-                # Fill missing values for counties not in our datasets
-                plot_df['county_name'] = plot_df['county_name'].fillna('Unknown County')
-                plot_df['state_name'] = plot_df['state_name'].fillna('Unknown State')
-                plot_df['state_abbr'] = plot_df['state_abbr'].fillna('??')
-                plot_df['EF'] = plot_df['EF'].fillna('N/A')
-                plot_df['EWIF'] = plot_df['EWIF'].fillna('N/A')
-                plot_df['ACF'] = plot_df['ACF'].fillna('N/A')
-                plot_df['SWI'] = plot_df['SWI'].fillna('N/A')
-                
-                # Calculate carbon footprint for each county
-                def calculate_carbon_footprint(ef_value, power_kwh_year):
-                    """Calculate carbon footprint in kgCO2e/year"""
-                    if ef_value == 'N/A' or pd.isna(ef_value) or power_kwh_year == 0:
-                        return 'N/A'
-                    try:
-                        return float(ef_value) * power_kwh_year
-                    except (ValueError, TypeError):
-                        return 'N/A'
-                
-                # Calculate water footprint for each county: WF = Wsite + EWIF*Psite
-                def calculate_water_footprint(ewif_value, power_kwh_year, water_l_year):
-                    """Calculate water footprint in L/year"""
-                    if ewif_value == 'N/A' or pd.isna(ewif_value):
-                        # If EWIF is not available, return only onsite water consumption
-                        return water_l_year if water_l_year > 0 else 'N/A'
-                    try:
-                        ewif_contribution = float(ewif_value) * power_kwh_year
-                        total_wf = water_l_year + ewif_contribution
-                        return total_wf
-                    except (ValueError, TypeError):
-                        return water_l_year if water_l_year > 0 else 'N/A'
-                
-                # Calculate water scarcity footprint for each county: WSF = ACF*Wsite + SWI*Psite
-                def calculate_water_scarcity_footprint(acf_value, swi_value, power_kwh_year, water_l_year):
-                    """Calculate water scarcity footprint"""
+            # Calculate ACF contribution (ACF * Wsite)
+            if acf_value != 'N/A' and not pd.isna(acf_value):
+                try:
+                    acf_contribution = float(acf_value) * water_l_year
+                except (ValueError, TypeError):
                     acf_contribution = 0
+            
+            # Calculate SWI contribution (SWI * Psite)
+            if swi_value != 'N/A' and not pd.isna(swi_value):
+                try:
+                    swi_contribution = float(swi_value) * power_kwh_year
+                except (ValueError, TypeError):
                     swi_contribution = 0
-                    
-                    # Calculate ACF contribution (ACF * Wsite)
-                    if acf_value != 'N/A' and not pd.isna(acf_value):
-                        try:
-                            acf_contribution = float(acf_value) * water_l_year
-                        except (ValueError, TypeError):
-                            acf_contribution = 0
-                    
-                    # Calculate SWI contribution (SWI * Psite)
-                    if swi_value != 'N/A' and not pd.isna(swi_value):
-                        try:
-                            swi_contribution = float(swi_value) * power_kwh_year
-                        except (ValueError, TypeError):
-                            swi_contribution = 0
-                    
-                    # Return total WSF or 'N/A' if both contributions are zero and no inputs
-                    total_wsf = acf_contribution + swi_contribution
-                    if total_wsf == 0 and water_l_year == 0 and power_kwh_year == 0:
-                        return 'N/A'
-                    return total_wsf
-                
-                # Add carbon footprint column
-                plot_df['carbon_footprint'] = plot_df['EF'].apply(
-                    lambda ef: calculate_carbon_footprint(ef, onsite_power_kwh_per_year)
-                )
-                
-                # Add water footprint column
-                plot_df['water_footprint'] = plot_df['EWIF'].apply(
-                    lambda ewif: calculate_water_footprint(ewif, onsite_power_kwh_per_year, onsite_water_l_per_year)
-                )
-                
-                # Add water scarcity footprint column
-                plot_df['water_scarcity_footprint'] = plot_df.apply(
-                    lambda row: calculate_water_scarcity_footprint(
-                        row['ACF'], row['SWI'], onsite_power_kwh_per_year, onsite_water_l_per_year
-                    ), axis=1
-                )
-                
-                # Format emission factor and carbon footprint to 3 significant digits for tooltips
-                plot_df['EF_formatted'] = plot_df['EF'].apply(format_to_3_sig_figs)
-                plot_df['carbon_footprint_formatted'] = plot_df['carbon_footprint'].apply(format_carbon_footprint_scientific)
-                plot_df['water_footprint_formatted'] = plot_df['water_footprint'].apply(format_water_footprint_scientific)
-                plot_df['water_scarcity_footprint_formatted'] = plot_df['water_scarcity_footprint'].apply(format_water_scarcity_footprint_scientific)
-                
-                # Determine which metric to use for color coding
-                if impact_metric == "Carbon Footprint":
-                    metric_column = 'carbon_footprint'
-                    metric_formatted_column = 'carbon_footprint_formatted'
-                    metric_unit = 'kgCO2e/year'
-                elif impact_metric == "Scope 1 & 2 Water Footprint":
-                    metric_column = 'water_footprint'
-                    metric_formatted_column = 'water_footprint_formatted'
-                    metric_unit = 'L/year'
-                else:  # Water Scarcity Footprint
-                    metric_column = 'water_scarcity_footprint'
-                    metric_formatted_column = 'water_scarcity_footprint_formatted'
-                    metric_unit = 'L/year'
-                
-                # Calculate color categories based on percentiles
-                plot_df['color_category'] = calculate_percentile_category(
-                    plot_df[metric_column], impact_metric
-                )
-                
-                # Create a numeric color scale for plotly
-                color_map = {'green': 0, 'yellow': 1, 'red': 2, 'gray': 3}
-                plot_df['color_numeric'] = plot_df['color_category'].map(color_map)
-                
-                # Highlight the selected county with a special marker
-                plot_df.loc[plot_df['fips'] == fips_code, 'highlight'] = 1
-                
-                # Debug info
-                st.write(f"Selected metric: {impact_metric}")
-                st.write(f"Total counties in plot data: {len(plot_df)}")
-                st.write(f"Selected county FIPS: {fips_code}")
-                st.write(f"Counties with highlight=1: {(plot_df['highlight'] == 1).sum()}")
+            
+            # Return total WSF or 'N/A' if both contributions are zero and no inputs
+            total_wsf = acf_contribution + swi_contribution
+            if total_wsf == 0 and water_l_year == 0 and power_kwh_year == 0:
+                return 'N/A'
+            return total_wsf
+        
+        # Add carbon footprint column
+        plot_df['carbon_footprint'] = plot_df['EF'].apply(
+            lambda ef: calculate_carbon_footprint(ef, onsite_power_kwh_per_year)
+        )
+        
+        # Add water footprint column
+        plot_df['water_footprint'] = plot_df['EWIF'].apply(
+            lambda ewif: calculate_water_footprint(ewif, onsite_power_kwh_per_year, onsite_water_l_per_year)
+        )
+        
+        # Add water scarcity footprint column
+        plot_df['water_scarcity_footprint'] = plot_df.apply(
+            lambda row: calculate_water_scarcity_footprint(
+                row['ACF'], row['SWI'], onsite_power_kwh_per_year, onsite_water_l_per_year
+            ), axis=1
+        )
+        
+        # Format emission factor and carbon footprint to 3 significant digits for tooltips
+        plot_df['EF_formatted'] = plot_df['EF'].apply(format_to_3_sig_figs)
+        plot_df['carbon_footprint_formatted'] = plot_df['carbon_footprint'].apply(format_carbon_footprint_scientific)
+        plot_df['water_footprint_formatted'] = plot_df['water_footprint'].apply(format_water_footprint_scientific)
+        plot_df['water_scarcity_footprint_formatted'] = plot_df['water_scarcity_footprint'].apply(format_water_scarcity_footprint_scientific)
+        
+        # Determine which metric to use for color coding
+        if impact_metric == "Carbon Footprint":
+            metric_column = 'carbon_footprint'
+            metric_formatted_column = 'carbon_footprint_formatted'
+            metric_unit = 'kgCO2e/year'
+        elif impact_metric == "Scope 1 & 2 Water Footprint":
+            metric_column = 'water_footprint'
+            metric_formatted_column = 'water_footprint_formatted'
+            metric_unit = 'L/year'
+        else:  # Water Scarcity Footprint
+            metric_column = 'water_scarcity_footprint'
+            metric_formatted_column = 'water_scarcity_footprint_formatted'
+            metric_unit = 'L/year'
+        
+        # Calculate color categories based on percentiles
+        plot_df['color_category'] = calculate_percentile_category(
+            plot_df[metric_column], impact_metric
+        )
+        
+        # Create a numeric color scale for plotly
+        color_map = {'green': 0, 'yellow': 1, 'red': 2, 'gray': 3}
+        plot_df['color_numeric'] = plot_df['color_category'].map(color_map)
+        
+        # Debug info
+        st.write(f"Selected metric: {impact_metric}")
+        st.write(f"Total counties in plot data: {len(plot_df)}")
 
-                # Make the choropleth map showing all counties
-                fig = px.choropleth(
-                    plot_df,
-                    geojson=geojson,
-                    locations='fips',
-                    color='color_numeric',
-                    color_continuous_scale=[
-                        [0, 'green'],      # 0 = green (low impact)
-                        [0.33, 'yellow'],  # 1 = yellow (medium impact)
-                        [0.67, 'red'],     # 2 = red (high impact)
-                        [1, 'gray']        # 3 = gray (no data)
-                    ],
-                    range_color=(0, 3),
-                    scope="usa",
-                    title=f"{impact_metric} by County - {selected_county}, {state_abbr} highlighted",
-                    hover_name='county_name',
-                    hover_data={
-                        'state_name': ':',
-                        'state_abbr': ':',
-                        'fips': ':',
-                        'color_numeric': False,
-                        'highlight': False
-                    },
-                    custom_data=['county_name', 'state_name', 'state_abbr', 'fips', 'EF_formatted', 'carbon_footprint_formatted', 'water_footprint_formatted', 'water_scarcity_footprint_formatted', 'color_category']
-                )
+        # Make the choropleth map showing all counties
+        fig = px.choropleth(
+            plot_df,
+            geojson=geojson,
+            locations='fips',
+            color='color_numeric',
+            color_continuous_scale=[
+                [0, 'green'],      # 0 = green (low impact)
+                [0.33, 'yellow'],  # 1 = yellow (medium impact)
+                [0.67, 'red'],     # 2 = red (high impact)
+                [1, 'gray']        # 3 = gray (no data)
+            ],
+            range_color=(0, 3),
+            scope="usa",
+            title=f"{impact_metric} by County",
+            hover_name='county_name',
+            hover_data={
+                'state_name': ':',
+                'state_abbr': ':',
+                'fips': ':',
+                'color_numeric': False
+            },
+            custom_data=['county_name', 'state_name', 'state_abbr', 'fips', 'EF_formatted', 'carbon_footprint_formatted', 'water_footprint_formatted', 'water_scarcity_footprint_formatted', 'color_category']
+        )
+        
+        # Update hover template for better formatting with 3 significant digits
+        fig.update_traces(
+            hovertemplate="<b>%{customdata[0]}</b><br>" +
+                          "State: %{customdata[1]} (%{customdata[2]})<br>" +
+                          "FIPS: %{customdata[3]}<br>" +
+                          "Carbon Emission Factor: %{customdata[4]}<br>" +
+                          "Carbon Footprint: %{customdata[5]} kgCO2e/year<br>" +
+                          "Water Footprint: %{customdata[6]} L/year<br>" +
+                          "Water Scarcity Footprint: %{customdata[7]} L/year<br>" +
+                          "Impact Category: %{customdata[8]}<br>" +
+                          "<extra></extra>"
+        )
+        
+        # Add county borders
+        fig.update_traces(
+            marker_line_color='white',
+            marker_line_width=0.5,
+            showscale=False
+        )
+        
+        # Customize the map appearance
+        fig.update_geos(
+            projection_type="albers usa",  # Better projection for contiguous US
+            showlakes=True,
+            lakecolor="lightblue",
+            bgcolor="white"
+        )
+        
+        fig.update_layout(
+            margin={"r":0,"t":40,"l":0,"b":0},
+            coloraxis_showscale=False,  # Hide the color scale since we have a custom legend
+            height=500
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Show statistics for the selected metric
+        if metric_column in plot_df.columns:
+            # Calculate statistics for the selected metric
+            valid_values = []
+            for val in plot_df[metric_column]:
+                if val != 'N/A' and not pd.isna(val):
+                    try:
+                        valid_values.append(float(val))
+                    except (ValueError, TypeError):
+                        continue
+            
+            if len(valid_values) > 0:
+                p33 = np.percentile(valid_values, 33)
+                p67 = np.percentile(valid_values, 67)
                 
-                # Update hover template for better formatting with 3 significant digits
-                fig.update_traces(
-                    hovertemplate="<b>%{customdata[0]}</b><br>" +
-                                  "State: %{customdata[1]} (%{customdata[2]})<br>" +
-                                  "FIPS: %{customdata[3]}<br>" +
-                                  "Carbon Emission Factor: %{customdata[4]}<br>" +
-                                  "Carbon Footprint: %{customdata[5]} kgCO2e/year<br>" +
-                                  "Water Footprint: %{customdata[6]} L/year<br>" +
-                                  "Water Scarcity Footprint: %{customdata[7]} L/year<br>" +
-                                  "Impact Category: %{customdata[8]}<br>" +
-                                  "<extra></extra>"
-                )
-                
-                # Add county borders and highlight selected county
-                fig.update_traces(
-                    marker_line_color='white',
-                    marker_line_width=0.5,
-                    showscale=False
-                )
-                
-                # Add a special highlight for the selected county
-                selected_county_data = plot_df[plot_df['fips'] == fips_code]
-                if not selected_county_data.empty:
-                    # Add a scatter trace to highlight the selected county
-                    # Note: This is a workaround since we can't easily modify individual county styling
-                    pass
-                
-                # Customize the map appearance
-                fig.update_geos(
-                    projection_type="albers usa",  # Better projection for contiguous US
-                    showlakes=True,
-                    lakecolor="lightblue",
-                    bgcolor="white"
-                )
-                
-                fig.update_layout(
-                    margin={"r":0,"t":40,"l":0,"b":0},
-                    coloraxis_showscale=False,  # Hide the color scale since we have a custom legend
-                    height=500
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
-                
-                # Show statistics for the selected metric
-                if metric_column in plot_df.columns:
-                    # Calculate statistics for the selected metric
-                    valid_values = []
-                    for val in plot_df[metric_column]:
-                        if val != 'N/A' and not pd.isna(val):
-                            try:
-                                valid_values.append(float(val))
-                            except (ValueError, TypeError):
-                                continue
-                    
-                    if len(valid_values) > 0:
-                        p33 = np.percentile(valid_values, 33)
-                        p67 = np.percentile(valid_values, 67)
-                        
-                        # Get selected county value
-                        selected_value = selected_county_data[metric_column].iloc[0] if not selected_county_data.empty else 'N/A'
-                        selected_formatted = selected_county_data[metric_formatted_column].iloc[0] if not selected_county_data.empty else 'N/A'
-                        selected_category = selected_county_data['color_category'].iloc[0] if not selected_county_data.empty else 'N/A'
-                        
-                        st.markdown(f"""
-                        **{impact_metric} Statistics:**
-                        - **33rd Percentile:** {p33:.2e} {metric_unit}
-                        - **67th Percentile:** {p67:.2e} {metric_unit}
-                        - **Selected County ({selected_county}):** {selected_formatted} {metric_unit}
-                        - **Category:** {selected_category.title()}
-                        """)
+                st.markdown(f"""
+                **{impact_metric} Statistics:**
+                - **33rd Percentile:** {p33:.2e} {metric_unit}
+                - **67th Percentile:** {p67:.2e} {metric_unit}
+                - **Counties with data:** {len(valid_values)} out of {len(plot_df)}
+                """)
             else:
-                st.warning("County data not found. Please try selecting again.")
+                st.warning(f"No valid data available for {impact_metric}")
                 
-        except Exception as e:
-            st.error(f"Error creating map: {e}")
-            import traceback
-            st.error(traceback.format_exc())
-    else:
-        st.info("👆 Select a state and county to see the map")
+    except Exception as e:
+        st.error(f"Error creating map: {e}")
+        import traceback
+        st.error(traceback.format_exc())
 
 # Add footer with information
 st.markdown("---")
@@ -651,9 +583,8 @@ st.markdown("""
 
 **How to use:** 
 1. Select an environmental impact metric to visualize
-2. Select a state from the dropdown, then choose a county
-3. Enter on-site power and water consumption values to see calculated impacts
-4. The map will color-code counties based on percentiles of the selected environmental impact
+2. Enter on-site power and water consumption values to see calculated impacts across all counties
+3. The map will color-code all counties based on percentiles of the selected environmental impact
 
 **Color Coding:**
 - **Green:** Below 33rd percentile (lowest environmental impact)
